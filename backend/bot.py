@@ -142,17 +142,34 @@ class OracleBot:
             btc_price=snapshot.price,
             btc_trend=trend.value,
             last_candle_color=snapshot.candle.color.value,
+            last_tick_at=datetime.now(tz=timezone.utc),
+            tick_count=self.state.tick_count + 1,
         )
 
     async def _on_candle_close(self, candle: Candle) -> None:
         # Eviter les doubles traitements rapides
         now = datetime.now(tz=timezone.utc)
         if (now.timestamp() - self._last_candle_ts) < settings.candle_interval_seconds / 2:
+            logger.info("Candle close ignoree (trop proche de la precedente)")
             return
         self._last_candle_ts = now.timestamp()
 
         recent_prices = list(self.binance.recent_prices)
         signal = evaluate_signal(candle, recent_prices)
+        logger.info(
+            "Candle CLOSE #%d: color=%s open=%.2f close=%.2f signal=%s confirmed=%s reason=%s",
+            self.state.candle_close_count + 1,
+            candle.color.value,
+            candle.open_price,
+            candle.close,
+            signal.direction.value,
+            signal.confirmed,
+            signal.reason,
+        )
+        await update_state(
+            last_candle_close_at=now,
+            candle_close_count=self.state.candle_close_count + 1,
+        )
 
         await update_state(
             current_signal=signal.direction.value if signal.confirmed else "INCERTAIN",
