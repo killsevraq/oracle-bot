@@ -73,15 +73,18 @@ class BinanceClient:
     async def _iter_messages(self) -> AsyncIterator[TickerSnapshot]:
         async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=20) as ws:
             logger.info("Connecte a Binance WS: %s", self.ws_url)
+            n = 0
             async for raw in ws:
                 if self._stop.is_set():
                     break
                 try:
                     msg = json.loads(raw)
                 except json.JSONDecodeError:
+                    logger.debug("WS message JSON invalide: %r", raw[:200])
                     continue
                 k = msg.get("k") or {}
                 if not k:
+                    logger.warning("WS message sans 'k': %r", msg)
                     continue
                 try:
                     candle = Candle(
@@ -91,8 +94,18 @@ class BinanceClient:
                         close=float(k["c"]),
                         is_closed=bool(k.get("x", False)),
                     )
-                except (KeyError, ValueError):
+                except (KeyError, ValueError) as exc:
+                    logger.warning("WS candle parse error: %s — payload=%r", exc, k)
                     continue
+                n += 1
+                if n <= 3 or n % 100 == 0 or candle.is_closed:
+                    logger.info(
+                        "WS tick #%d: close=%.2f open=%.2f closed=%s",
+                        n,
+                        candle.close,
+                        candle.open_price,
+                        candle.is_closed,
+                    )
                 yield TickerSnapshot(price=candle.close, candle=candle)
 
     def stop(self) -> None:
