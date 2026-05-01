@@ -34,7 +34,10 @@ class Settings(BaseSettings):
     polymarket_gamma_url: str = Field(default="https://gamma-api.polymarket.com")
 
     # Binance
-    binance_ws_url: str = Field(default="wss://stream.binance.com:9443/ws/btcusdt@kline_10m")
+    # NB: Binance ne supporte PAS d'intervalle 10m. Intervalles valides :
+    # 1s, 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M.
+    # On prend 5m par defaut (= duree du pari BTC 5min).
+    binance_ws_url: str = Field(default="wss://stream.binance.com:9443/ws/btcusdt@kline_5m")
     binance_rest_url: str = Field(default="https://api.binance.com")
     binance_symbol: str = Field(default="BTCUSDT")
 
@@ -49,7 +52,8 @@ class Settings(BaseSettings):
 
     # Resolution
     bet_resolution_seconds: int = Field(default=300, ge=10)  # 5 minutes
-    candle_interval_seconds: int = Field(default=600, ge=60)  # 10 minutes
+    # Doit correspondre a l'intervalle de bougie Binance utilise (defaut 5m).
+    candle_interval_seconds: int = Field(default=300, ge=60)
 
     @property
     def is_demo(self) -> bool:
