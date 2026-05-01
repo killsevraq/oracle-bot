@@ -1,4 +1,4 @@
-"""Client WebSocket Binance pour les bougies BTC 10min."""
+"""Client WebSocket Binance pour les bougies BTC (5m par defaut, configurable)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,11 @@ class TickerSnapshot:
 
 
 class BinanceClient:
-    """Stream les bougies BTC 10min via WebSocket et garde un buffer de prix recents."""
+    """Stream les bougies BTC via WebSocket et garde un buffer de prix recents.
+
+    L'intervalle est defini par BINANCE_WS_URL (defaut kline_5m). Binance ne supporte
+    pas 10m -- utiliser 5m ou 15m.
+    """
 
     def __init__(
         self,
