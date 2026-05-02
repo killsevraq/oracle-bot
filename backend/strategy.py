@@ -104,10 +104,17 @@ def evaluate_signal(candle: Candle, recent_prices: list[float]) -> Signal:
             confirmed=True,
             reason="bougie rouge + tendance Binance DOWN",
         )
+
+    if candle_dir == Direction.FLAT:
+        reason = "bougie doji (open == close)"
+    elif binance_dir == Direction.FLAT:
+        reason = f"tendance Binance neutre (bougie={candle_dir.value}, binance=FLAT)"
+    else:
+        reason = f"signaux contradictoires (bougie={candle_dir.value}, binance={binance_dir.value})"
     return Signal(
         direction=Direction.FLAT,
         candle_color=candle.color,
         binance_trend=binance_dir,
         confirmed=False,
-        reason=f"signaux contradictoires (bougie={candle_dir.value}, binance={binance_dir.value})",
+        reason=reason,
     )

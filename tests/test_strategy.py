@@ -61,11 +61,12 @@ def test_double_confirmation_down():
 
 
 def test_no_signal_when_contradictory():
-    # Bougie verte mais Binance flat / down => pas de pari
+    # Bougie verte mais Binance baisse => contradiction reelle
     candle = Candle(open_price=100, high=110, low=99, close=105)
     sig = evaluate_signal(candle, [105, 104, 103])
     assert not sig.confirmed
     assert sig.direction == Direction.FLAT
+    assert sig.reason.startswith("signaux contradictoires")
 
 
 def test_no_signal_when_doji():
@@ -73,15 +74,18 @@ def test_no_signal_when_doji():
     sig = evaluate_signal(candle, [100, 101, 102])
     assert not sig.confirmed
     assert sig.direction == Direction.FLAT
+    assert sig.reason == "bougie doji (open == close)"
 
 
 def test_signal_skipped_when_binance_flat_strict():
-    # Bougie verte mais Binance FLAT -> skip (regle stricte du cahier des charges)
+    # Bougie verte mais Binance FLAT -> skip avec un message neutre, pas de contradiction
     candle = Candle(open_price=100, high=101, low=99, close=100.5)
     sig = evaluate_signal(candle, [100.0, 100.001, 100.0])  # variation <0.005%
     assert sig.binance_trend == Direction.FLAT
     assert not sig.confirmed
     assert sig.direction == Direction.FLAT
+    assert sig.reason.startswith("tendance Binance neutre")
+    assert "contradictoire" not in sig.reason
 
 
 def test_signal_skipped_red_candle_flat_binance():
@@ -90,3 +94,13 @@ def test_signal_skipped_red_candle_flat_binance():
     assert sig.binance_trend == Direction.FLAT
     assert not sig.confirmed
     assert sig.direction == Direction.FLAT
+    assert sig.reason.startswith("tendance Binance neutre")
+    assert "contradictoire" not in sig.reason
+
+
+def test_signal_doji_takes_priority_over_flat_binance():
+    # Doji + Binance FLAT : on indique "doji" plutot que "contradictoires"
+    candle = Candle(open_price=100, high=101, low=99, close=100)
+    sig = evaluate_signal(candle, [100.0, 100.0])
+    assert not sig.confirmed
+    assert sig.reason == "bougie doji (open == close)"
