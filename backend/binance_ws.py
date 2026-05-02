@@ -36,7 +36,7 @@ class BinanceClient:
         ws_url: str | None = None,
         rest_url: str | None = None,
         symbol: str | None = None,
-        recent_window: int = 240,
+        recent_window: int = 30,
     ) -> None:
         self.ws_url = ws_url or settings.binance_ws_url
         self.rest_url = rest_url or settings.binance_rest_url

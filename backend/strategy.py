@@ -54,12 +54,11 @@ class Signal:
     reason: str
 
 
-def binance_short_term_trend(prices: list[float], threshold_pct: float = 0.005) -> Direction:
+def binance_short_term_trend(prices: list[float], threshold_pct: float = 0.02) -> Direction:
     """Estime la tendance Binance temps reel sur les derniers prix.
 
     `prices` doit contenir au moins 2 echantillons recents (dernier en dernier).
     `threshold_pct` est le seuil minimum (en %) pour qualifier une direction (sinon FLAT).
-    Defaut 0.005% (~4 USD sur 78kBTC) pour capter le micro-trend sur ~1-2 min de ticks.
     """
     if len(prices) < 2:
         return Direction.FLAT
@@ -78,12 +77,9 @@ def binance_short_term_trend(prices: list[float], threshold_pct: float = 0.005) 
 def evaluate_signal(candle: Candle, recent_prices: list[float]) -> Signal:
     """Applique la regle de double confirmation stricte (cahier des charges).
 
-    Pari UP   : bougie verte ET tendance Binance UP.
-    Pari DOWN : bougie rouge ET tendance Binance DOWN.
-    Sinon (doji, FLAT, contradiction) : skip.
-
-    NB: Une 1ere version permissive autorisait FLAT. Resultat en demo: ~43% win rate,
-    PnL negatif. On revient a la regle stricte du cahier des charges.
+    Pari UP   : bougie verte ET prix Binance en hausse.
+    Pari DOWN : bougie rouge ET prix Binance en baisse.
+    Sinon     : aucun pari (skip).
     """
     candle_dir = candle.candle_direction
     binance_dir = binance_short_term_trend(recent_prices)
