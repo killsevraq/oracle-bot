@@ -2,25 +2,31 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Bet } from "../types";
 
-export function BetHistory({ refreshKey }: { refreshKey: number }) {
+interface Props {
+  refreshKey: number;
+  strategy?: string;
+  title?: string;
+}
+
+export function BetHistory({ refreshKey, strategy, title }: Props) {
   const [bets, setBets] = useState<Bet[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const data = await api.bets(50);
+        const data = await api.bets(50, strategy);
         if (!cancelled) setBets(data);
       } catch {
         // ignore
       }
     };
     load();
-  }, [refreshKey]);
+  }, [refreshKey, strategy]);
 
   return (
     <div className="card">
-      <h2>Historique des paris</h2>
+      <h2>{title ?? "Historique des paris"}</h2>
       <table>
         <thead>
           <tr>
@@ -31,8 +37,9 @@ export function BetHistory({ refreshKey }: { refreshKey: number }) {
             <th>Marche</th>
             <th>Dir</th>
             <th>Mise</th>
-            <th>Entry</th>
-            <th>Exit</th>
+            <th>Entry BTC</th>
+            <th>Poly</th>
+            <th>Exit BTC</th>
             <th>Statut</th>
             <th>PnL</th>
           </tr>
@@ -51,6 +58,7 @@ export function BetHistory({ refreshKey }: { refreshKey: number }) {
                 <td className={b.direction === "UP" ? "up" : b.direction === "DOWN" ? "down" : "muted"}>{b.direction}</td>
                 <td>{b.amount.toFixed(2)}</td>
                 <td>{b.entry_price.toFixed(2)}</td>
+                <td>{b.polymarket_price > 0 ? b.polymarket_price.toFixed(3) : "—"}</td>
                 <td>{b.exit_price ? b.exit_price.toFixed(2) : "—"}</td>
                 <td>{b.status}</td>
                 <td className={b.pnl > 0 ? "up" : b.pnl < 0 ? "down" : "muted"}>{b.pnl > 0 ? "+" : ""}{b.pnl.toFixed(2)}</td>
@@ -59,7 +67,7 @@ export function BetHistory({ refreshKey }: { refreshKey: number }) {
           })}
           {bets.length === 0 && (
             <tr>
-              <td colSpan={11} className="muted" style={{ textAlign: "center", padding: 24 }}>
+              <td colSpan={12} className="muted" style={{ textAlign: "center", padding: 24 }}>
                 Aucun pari pour l'instant. Demarre le bot pour commencer.
               </td>
             </tr>

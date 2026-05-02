@@ -242,15 +242,10 @@ class OracleBot:
                 await update_state(current_signal="INCERTAIN", next_bet_eta=None)
                 return
 
-        # Lecture Polymarket pour PnL virtuel et logging
-        market = await self.polymarket.fetch_btc_market()
-        poly_price = (
-            market.yes_price
-            if market and signal.direction == Direction.UP
-            else market.no_price
-            if market
-            else 0.5
-        )
+        # Lecture Polymarket : on utilise le carnet CLOB du marche actif pour obtenir
+        # le vrai prix d'entree (best ask du cote sur lequel on parie). Le payout
+        # demo en depend : payout = mise * (1/poly_price - 1), comme sur Polymarket.
+        poly_price = await self._fetch_entry_price(signal.direction)
 
         placed = await self.trader.place_bet(
             direction=signal.direction,
@@ -306,12 +301,41 @@ class OracleBot:
                     )
                     icon = "GAGNE" if won else "PERDU"
                     await self.notifier.send(
-                        f"[{placed.mode.upper()}] {icon} {pnl:+.2f} USDC | Solde: {new_balance:.2f}"
+                        f"[{placed.mode.upper()}] {icon} {pnl:+.2f} USDC "
+                        f"(entree poly={placed.polymarket_price:.3f}, mise={placed.amount:.2f}) "
+                        f"| Solde: {new_balance:.2f}"
                     )
                     await self._check_sl_tp()
                 self._pending_bets = still_pending
         except asyncio.CancelledError:
             return
+
+    async def _fetch_entry_price(self, direction: Direction) -> float:
+        """Recupere le prix d'entree Polymarket (best ask du cote pari) via le CLOB.
+
+        - direction UP  -> best_ask du token YES (cout pour acheter une part YES).
+        - direction DOWN -> 1 - best_bid YES (~ best_ask du token NO).
+
+        Retourne 0.5 si aucun carnet dispo. Clamp dans [0.02, 0.98] pour eviter
+        des payouts irrealistes en cas de prix degenere.
+        """
+        try:
+            market = await self.clob.find_current_market()
+            if market is None:
+                return 0.5
+            book = await self.clob.fetch_book(market.yes_token_id)
+            if book is None:
+                return 0.5
+            if direction == Direction.UP:
+                price = book.best_ask if 0.0 < book.best_ask < 1.0 else book.mid
+            elif direction == Direction.DOWN:
+                price = 1.0 - book.best_bid if 0.0 < book.best_bid < 1.0 else 1.0 - book.mid
+            else:
+                price = 0.5
+        except Exception as exc:
+            logger.warning("Lecture prix Polymarket echouee: %s", exc)
+            return 0.5
+        return max(0.02, min(0.98, price))
 
     async def _poll_polymarket(self) -> None:
         try:
