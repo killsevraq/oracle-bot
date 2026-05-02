@@ -25,11 +25,11 @@ export function Monitoring({ state }: Props) {
         <span className="value">{state.btc_price ? state.btc_price.toFixed(2) : "—"} USD {trendBadge(state.btc_trend)}</span>
       </div>
       <div className="row">
-        <label>Bougie</label>
+        <label>Bougie 10min</label>
         <span className="value">
           {state.last_candle_color === "GREEN" && <span className="up">Verte</span>}
           {state.last_candle_color === "RED" && <span className="down">Rouge</span>}
-          {(!state.last_candle_color || state.last_candle_color === "NONE") && <span className="muted">—</span>}
+          {!state.last_candle_color && <span className="muted">—</span>}
         </span>
       </div>
       <div className="row">

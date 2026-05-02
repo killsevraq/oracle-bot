@@ -1,6 +1,6 @@
 # Oracle Bot V2.0
 
-Bot automatise de paris sur Bitcoin combinant les bougies Binance (5 min par defaut, configurable) et les marches publics Polymarket.
+Bot automatise de paris sur Bitcoin combinant les bougies Binance 10 min et les marches publics Polymarket.
 Ce dépôt implémente l'intégralité du cahier des charges V2.0 : **mode DEMO gratuit** (paris simulés sur vrais prix) et **mode PRODUCTION** (paris réels via Polymarket CLOB), bascule sans changer le code.
 
 > *Valide d'abord. Investis ensuite.*
@@ -23,7 +23,7 @@ oracle-bot/
 │   ├── main.py            # FastAPI + lifespan = bot
 │   ├── bot.py             # Orchestrateur asyncio (start/stop, SL/TP, paris)
 │   ├── strategy.py        # Signal bougie + double confirmation
-│   ├── binance_ws.py      # WebSocket Binance (btcusdt@kline_5m par defaut)
+│   ├── binance_ws.py      # WebSocket Binance (btcusdt@kline_10m)
 │   ├── polymarket.py      # Client REST public (gamma + clob)
 │   ├── trader.py          # DemoTrader / ProdTrader (meme interface)
 │   ├── telegram_bot.py    # Notifs + commandes /start /stop /mise /mode /solde /stats /status
@@ -37,7 +37,7 @@ oracle-bot/
 
 Flow :
 
-1. Binance WebSocket envoie chaque bougie BTC en temps réel (gratuit, public). Intervalle par défaut **5 min** (modifiable via `BINANCE_WS_URL`). NB : Binance ne supporte **pas** d'intervalle 10 min — utiliser 5 m ou 15 m.
+1. Binance WebSocket envoie chaque bougie BTC 10 min en temps réel (gratuit, public).
 2. Le bot calcule la couleur de la bougie (verte/rouge) et la tendance court-terme.
 3. **Double confirmation** : un pari n'est placé que si bougie + tendance Binance s'alignent. Sinon → skip.
 4. Polymarket public est lu pour récupérer le prix du marché BTC et calculer un PnL virtuel réaliste.
@@ -89,8 +89,6 @@ Voir [`.env.example`](.env.example). Principales :
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Notifs Telegram | (vide → desactive) |
 | `POLYMARKET_PRIVATE_KEY` / `POLYMARKET_FUNDER_ADDRESS` | Wallet pour mode prod uniquement | (vide) |
 | `DATABASE_URL` | URL SQLAlchemy (async) | `sqlite+aiosqlite:///./data/oracle.db` |
-| `BINANCE_WS_URL` | Stream Binance kline. Intervalles valides : 1m, 3m, 5m, 15m, 30m, 1h, ... | `wss://stream.binance.com:9443/ws/btcusdt@kline_5m` |
-| `CANDLE_INTERVAL_SECONDS` | Doit correspondre a l'intervalle ci-dessus (300 pour 5m, 60 pour 1m, 900 pour 15m) | `300` |
 
 ## Bascule DEMO → PROD
 
