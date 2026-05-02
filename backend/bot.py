@@ -93,13 +93,20 @@ class OracleBot:
                 asyncio.create_task(self._poll_polymarket(), name="poly-poll"),
                 asyncio.create_task(self._resolve_loop(), name="resolve-loop"),
             ]
-            if settings.signal_mode == "arbitrage":
+            if settings.signal_mode in ("arbitrage", "both"):
                 self._tasks.append(asyncio.create_task(self._arbitrage_loop(), name="arbitrage-loop"))
                 logger.info(
-                    "Mode arbitrage actif (poll %.1fs, seuil %.2f, vol %.2f%% / 5min)",
+                    "Strategie arbitrage active (poll %.1fs, seuil %.2f, vol %.2f%% / 5min)",
                     settings.arbitrage_poll_interval,
                     settings.arbitrage_threshold,
                     settings.vol_5min_pct,
+                )
+            if settings.signal_mode in ("candle", "both"):
+                logger.info(
+                    "Strategie candle active (corps min %.3f%%, trend %.3f%%, post-close %.1fs)",
+                    settings.min_candle_body_pct,
+                    settings.binance_trend_threshold_pct,
+                    settings.post_close_confirmation_seconds,
                 )
         await self.notifier.send("Oracle Bot demarre.")
 
@@ -210,7 +217,8 @@ class OracleBot:
         if not self.state.running:
             return
 
-        # Mode arbitrage : la decision de pari est prise dans _arbitrage_loop, pas ici.
+        # Mode arbitrage pur : la decision de pari est prise dans _arbitrage_loop, pas ici.
+        # Mode both : on continue, les deux strategies posent leurs paris en parallele.
         if settings.signal_mode == "arbitrage":
             logger.info("Signal candle ignore (mode=arbitrage)")
             return
@@ -253,7 +261,10 @@ class OracleBot:
         )
 
         bet_id = await self._persist_bet(
-            placed, signal_candle=candle.color, signal_trend=signal.binance_trend
+            placed,
+            signal_candle=candle.color,
+            signal_trend=signal.binance_trend,
+            strategy="candle",
         )
         self._pending_bets.append((placed, bet_id, now + timedelta(seconds=settings.bet_resolution_seconds)))
 
@@ -417,6 +428,7 @@ class OracleBot:
                 direction=Direction.UP,
                 fair_yes=fair_yes,
                 market_price=yes_book.best_ask,
+                edge=edge_up,
                 market=market,
                 btc_now=btc_now,
             )
@@ -427,6 +439,7 @@ class OracleBot:
                 direction=Direction.DOWN,
                 fair_yes=fair_yes,
                 market_price=no_price,
+                edge=edge_down,
                 market=market,
                 btc_now=btc_now,
             )
@@ -437,6 +450,7 @@ class OracleBot:
         direction: Direction,
         fair_yes: float,
         market_price: float,
+        edge: float,
         market: Btc5MinMarket,
         btc_now: float,
     ) -> None:
@@ -453,6 +467,7 @@ class OracleBot:
             placed,
             signal_candle=CandleColor.NONE,
             signal_trend=Direction.FLAT,
+            strategy="arbitrage",
         )
         deadline = datetime.fromtimestamp(market.end_ts, tz=timezone.utc)
         self._pending_bets.append((placed, bet_id, deadline))
@@ -471,7 +486,7 @@ class OracleBot:
         await self.notifier.send(
             f"[ARBITRAGE {placed.mode.upper()}] {direction.value} "
             f"{placed.amount:.2f} USDC @ poly={market_price:.3f} "
-            f"fair={fair_yes:.3f} (edge {abs(fair_yes - market_price):+.3f}) "
+            f"fair={fair_yes:.3f} (edge {edge:+.3f}) "
             f"strike={self._arb_strike:.2f}"
         )
         logger.info(
@@ -479,7 +494,7 @@ class OracleBot:
             direction.value,
             market_price,
             fair_yes,
-            fair_yes - market_price if direction == Direction.UP else market_price - (1 - fair_yes),
+            edge,
             self._arb_strike,
             deadline.isoformat(),
         )
@@ -497,7 +512,11 @@ class OracleBot:
     # ---------- Persistance ----------
 
     async def _persist_bet(
-        self, placed: PlacedBet, signal_candle: CandleColor, signal_trend: Direction
+        self,
+        placed: PlacedBet,
+        signal_candle: CandleColor,
+        signal_trend: Direction,
+        strategy: str = "candle",
     ) -> int:
         async with SessionLocal() as session:
             bet = models.Bet(
@@ -510,11 +529,20 @@ class OracleBot:
                 status=models.BetStatus.PENDING.value,
                 signal_candle=signal_candle.value,
                 signal_binance_trend=signal_trend.value,
+                strategy=strategy,
             )
             session.add(bet)
             await session.commit()
             await session.refresh(bet)
-            await publish("bet", {"id": bet.id, "status": bet.status, "direction": bet.direction})
+            await publish(
+                "bet",
+                {
+                    "id": bet.id,
+                    "status": bet.status,
+                    "direction": bet.direction,
+                    "strategy": bet.strategy,
+                },
+            )
             return bet.id
 
     async def _mark_resolved(
@@ -548,6 +576,7 @@ class OracleBot:
                 status=models.BetStatus.SKIPPED.value,
                 signal_candle=candle.color.value,
                 signal_binance_trend="",
+                strategy="candle",
                 notes=reason[:255],
             )
             session.add(bet)

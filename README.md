@@ -94,7 +94,7 @@ Voir [`.env.example`](.env.example). Principales :
 | `MIN_CANDLE_BODY_PCT` | Corps minimum d'une bougie en %. Filtre les quasi-doji (bruit). 0.02 % ~ 16 USD sur 78kBTC. | `0.02` |
 | `BINANCE_TREND_THRESHOLD_PCT` | Seuil de detection de la tendance Binance en %. En dessous = FLAT = skip. | `0.02` |
 | `POST_CLOSE_CONFIRMATION_SECONDS` | Delai apres la fermeture pour verifier que le prix continue dans la direction du signal. 0 = pas de confirmation. | `3` |
-| `SIGNAL_MODE` | `candle` (double confirmation bougie + trend) ou `arbitrage` (lag Polymarket vs Binance) | `candle` |
+| `SIGNAL_MODE` | `candle` / `arbitrage` / `both` (deux strategies en parallele, comparaison cote a cote) | `candle` |
 | `ARBITRAGE_THRESHOLD` | En cents (0..1). Pari si fair_yes - market_yes >= seuil. | `0.05` |
 | `VOL_5MIN_PCT` | Volatilite estimee de BTC sur 5 min en %. | `0.20` |
 | `ARBITRAGE_POLL_INTERVAL` | Frequence de poll du carnet Polymarket en mode arbitrage (sec). | `2.0` |
