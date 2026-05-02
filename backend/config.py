@@ -55,6 +55,17 @@ class Settings(BaseSettings):
     # Doit correspondre a l'intervalle de bougie Binance utilise (defaut 5m).
     candle_interval_seconds: int = Field(default=300, ge=60)
 
+    # Filtres de signal (pour eviter de parier sur du bruit)
+    # Corps minimum d'une bougie en % du prix (skip si trop petit = quasi-doji).
+    # 0.02 % ~ 16 USD sur 78kBTC, ~ 8 USD sur 40kBTC. A monter pour etre plus selectif.
+    min_candle_body_pct: float = Field(default=0.02, ge=0.0)
+    # Seuil de detection de la tendance Binance en %.
+    # 0.02 % ~ 16 USD sur 78kBTC. En dessous => trend FLAT (= signal incertain, on skip).
+    binance_trend_threshold_pct: float = Field(default=0.02, ge=0.0)
+    # Confirmation post-cloture : on attend N secondes apres la fermeture de la bougie
+    # et on verifie que le dernier prix continue dans la direction du signal. 0 = pas de confirmation.
+    post_close_confirmation_seconds: float = Field(default=3.0, ge=0.0)
+
     @property
     def is_demo(self) -> bool:
         return self.mode == BotMode.DEMO
