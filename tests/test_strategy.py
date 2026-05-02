@@ -73,3 +73,20 @@ def test_no_signal_when_doji():
     sig = evaluate_signal(candle, [100, 101, 102])
     assert not sig.confirmed
     assert sig.direction == Direction.FLAT
+
+
+def test_signal_confirmed_when_binance_flat():
+    # Bougie verte + Binance non-contradictoire (FLAT) -> on prend le pari UP
+    candle = Candle(open_price=100, high=101, low=99, close=100.5)
+    sig = evaluate_signal(candle, [100.0, 100.001, 100.0])  # variation <0.005%
+    assert sig.binance_trend == Direction.FLAT
+    assert sig.confirmed
+    assert sig.direction == Direction.UP
+
+
+def test_signal_down_when_binance_flat():
+    candle = Candle(open_price=100, high=101, low=99, close=99.5)
+    sig = evaluate_signal(candle, [100.0, 100.0])
+    assert sig.binance_trend == Direction.FLAT
+    assert sig.confirmed
+    assert sig.direction == Direction.DOWN

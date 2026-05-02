@@ -54,11 +54,12 @@ class Signal:
     reason: str
 
 
-def binance_short_term_trend(prices: list[float], threshold_pct: float = 0.02) -> Direction:
+def binance_short_term_trend(prices: list[float], threshold_pct: float = 0.005) -> Direction:
     """Estime la tendance Binance temps reel sur les derniers prix.
 
     `prices` doit contenir au moins 2 echantillons recents (dernier en dernier).
     `threshold_pct` est le seuil minimum (en %) pour qualifier une direction (sinon FLAT).
+    Defaut 0.005% (~4 USD sur 78kBTC) pour capter le micro-trend sur ~1-2 min de ticks.
     """
     if len(prices) < 2:
         return Direction.FLAT
@@ -77,28 +78,40 @@ def binance_short_term_trend(prices: list[float], threshold_pct: float = 0.02) -
 def evaluate_signal(candle: Candle, recent_prices: list[float]) -> Signal:
     """Applique la regle de double confirmation.
 
-    Pari UP   : bougie verte ET prix Binance en hausse.
-    Pari DOWN : bougie rouge ET prix Binance en baisse.
-    Sinon     : aucun pari (skip).
+    Pari UP   : bougie verte ET tendance Binance UP ou FLAT (= non-contradictoire).
+    Pari DOWN : bougie rouge ET tendance Binance DOWN ou FLAT.
+    Skip      : bougie doji (FLAT) OU tendance Binance qui contredit la bougie.
+
+    Le "FLAT" Binance n'est pas contradictoire : il signifie juste que le micro-trend
+    n'a pas atteint le seuil de detection. La bougie cloturee reste l'evidence forte.
     """
     candle_dir = candle.candle_direction
     binance_dir = binance_short_term_trend(recent_prices)
 
-    if candle_dir == Direction.UP and binance_dir == Direction.UP:
+    if candle_dir == Direction.FLAT:
+        return Signal(
+            direction=Direction.FLAT,
+            candle_color=candle.color,
+            binance_trend=binance_dir,
+            confirmed=False,
+            reason="bougie doji (open == close)",
+        )
+
+    if candle_dir == Direction.UP and binance_dir != Direction.DOWN:
         return Signal(
             direction=Direction.UP,
             candle_color=candle.color,
             binance_trend=binance_dir,
             confirmed=True,
-            reason="bougie verte + tendance Binance UP",
+            reason=f"bougie verte + tendance Binance {binance_dir.value} (non contradictoire)",
         )
-    if candle_dir == Direction.DOWN and binance_dir == Direction.DOWN:
+    if candle_dir == Direction.DOWN and binance_dir != Direction.UP:
         return Signal(
             direction=Direction.DOWN,
             candle_color=candle.color,
             binance_trend=binance_dir,
             confirmed=True,
-            reason="bougie rouge + tendance Binance DOWN",
+            reason=f"bougie rouge + tendance Binance {binance_dir.value} (non contradictoire)",
         )
     return Signal(
         direction=Direction.FLAT,
