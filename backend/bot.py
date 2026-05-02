@@ -137,7 +137,7 @@ class OracleBot:
 
     async def _on_tick(self, snapshot: TickerSnapshot) -> None:
         prices = list(self.binance.recent_prices)
-        trend = binance_short_term_trend(prices)
+        trend = binance_short_term_trend(prices, threshold_pct=settings.binance_trend_threshold_pct)
         await update_state(
             btc_price=snapshot.price,
             btc_trend=trend.value,
@@ -155,7 +155,12 @@ class OracleBot:
         self._last_candle_ts = now.timestamp()
 
         recent_prices = list(self.binance.recent_prices)
-        signal = evaluate_signal(candle, recent_prices)
+        signal = evaluate_signal(
+            candle,
+            recent_prices,
+            min_body_pct=settings.min_candle_body_pct,
+            trend_threshold_pct=settings.binance_trend_threshold_pct,
+        )
         logger.info(
             "Candle CLOSE #%d: color=%s open=%.2f close=%.2f signal=%s confirmed=%s reason=%s",
             self.state.candle_close_count + 1,
@@ -186,6 +191,25 @@ class OracleBot:
 
         if not self.state.running:
             return
+
+        # Filtre 3 : confirmation post-cloture. On attend N sec et on verifie que le prix
+        # continue dans la direction du signal. Si retournement immediat, on skip.
+        if settings.post_close_confirmation_seconds > 0:
+            await asyncio.sleep(settings.post_close_confirmation_seconds)
+            current_price = self.state.btc_price or candle.close
+            continued = (signal.direction == Direction.UP and current_price >= candle.close) or (
+                signal.direction == Direction.DOWN and current_price <= candle.close
+            )
+            if not continued:
+                reason = (
+                    f"retournement post-cloture ({signal.direction.value}, "
+                    f"close={candle.close:.2f} -> spot={current_price:.2f})"
+                )
+                logger.info("Skip post-cloture: %s", reason)
+                await self._record_skip(reason, candle)
+                await self.notifier.send(f"Signal annule par retournement post-cloture ({reason}).")
+                await update_state(current_signal="INCERTAIN", next_bet_eta=None)
+                return
 
         # Lecture Polymarket pour PnL virtuel et logging
         market = await self.polymarket.fetch_btc_market()

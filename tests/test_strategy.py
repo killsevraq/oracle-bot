@@ -104,3 +104,34 @@ def test_signal_doji_takes_priority_over_flat_binance():
     sig = evaluate_signal(candle, [100.0, 100.0])
     assert not sig.confirmed
     assert sig.reason == "bougie doji (open == close)"
+
+
+def test_signal_skipped_when_candle_body_too_small():
+    # Bougie verte mais corps < min_body_pct => skip "bougie trop petite"
+    candle = Candle(open_price=100, high=101, low=99, close=100.005)  # 0.005% body
+    sig = evaluate_signal(candle, [100, 102, 104], min_body_pct=0.02)
+    assert not sig.confirmed
+    assert sig.direction == Direction.FLAT
+    assert sig.reason.startswith("bougie trop petite")
+
+
+def test_signal_confirmed_when_body_above_min():
+    # Bougie verte avec corps >= min_body_pct + Binance UP => confirme
+    candle = Candle(open_price=100, high=101, low=99, close=100.05)  # 0.05% body
+    sig = evaluate_signal(candle, [100, 102, 104], min_body_pct=0.02)
+    assert sig.confirmed
+    assert sig.direction == Direction.UP
+
+
+def test_signal_uses_custom_trend_threshold():
+    # Variation 0.01% en dessous du seuil 0.02% => Binance FLAT => skip
+    candle = Candle(open_price=100, high=101, low=99, close=100.5)  # body 0.5%
+    sig = evaluate_signal(
+        candle,
+        [100.0, 100.005, 100.01],
+        min_body_pct=0.02,
+        trend_threshold_pct=0.02,
+    )
+    assert sig.binance_trend == Direction.FLAT
+    assert not sig.confirmed
+    assert sig.reason.startswith("tendance Binance neutre")

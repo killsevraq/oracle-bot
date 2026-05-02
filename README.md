@@ -91,6 +91,19 @@ Voir [`.env.example`](.env.example). Principales :
 | `DATABASE_URL` | URL SQLAlchemy (async) | `sqlite+aiosqlite:///./data/oracle.db` |
 | `BINANCE_WS_URL` | Stream Binance kline. Intervalles valides : 1m, 3m, 5m, 15m, 30m, 1h, ... | `wss://stream.binance.com:9443/ws/btcusdt@kline_5m` |
 | `CANDLE_INTERVAL_SECONDS` | Doit correspondre a l'intervalle ci-dessus (300 pour 5m, 60 pour 1m, 900 pour 15m) | `300` |
+| `MIN_CANDLE_BODY_PCT` | Corps minimum d'une bougie en %. Filtre les quasi-doji (bruit). 0.02 % ~ 16 USD sur 78kBTC. | `0.02` |
+| `BINANCE_TREND_THRESHOLD_PCT` | Seuil de detection de la tendance Binance en %. En dessous = FLAT = skip. | `0.02` |
+| `POST_CLOSE_CONFIRMATION_SECONDS` | Delai apres la fermeture pour verifier que le prix continue dans la direction du signal. 0 = pas de confirmation. | `3` |
+
+### Trois filtres "humain" anti-bruit
+
+Le bot reproduit ce qu'un trader manuel ferait : il refuse de parier si le signal n'est pas franc.
+
+1. **Bougie significative** (`MIN_CANDLE_BODY_PCT`) : ignore une bougie dont le corps est trop petit (quasi-doji = pas de momentum clair).
+2. **Tendance Binance significative** (`BINANCE_TREND_THRESHOLD_PCT`) : ignore les variations de prix recentes inferieures au seuil (sideways = pas de momentum clair).
+3. **Confirmation post-cloture** (`POST_CLOSE_CONFIRMATION_SECONDS`) : apres la fermeture, attend N sec et verifie que le prix continue dans la direction du signal. Si retournement immediat → skip.
+
+Pour etre **plus selectif**, monter les seuils (ex: `MIN_CANDLE_BODY_PCT=0.05`, `BINANCE_TREND_THRESHOLD_PCT=0.05`) — moins de paris, mais plus de qualite.
 
 ## Bascule DEMO → PROD
 
