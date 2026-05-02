@@ -34,10 +34,7 @@ class Settings(BaseSettings):
     polymarket_gamma_url: str = Field(default="https://gamma-api.polymarket.com")
 
     # Binance
-    # NB: Binance ne supporte PAS d'intervalle 10m. Intervalles valides :
-    # 1s, 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M.
-    # On prend 5m par defaut (= duree du pari BTC 5min).
-    binance_ws_url: str = Field(default="wss://stream.binance.com:9443/ws/btcusdt@kline_5m")
+    binance_ws_url: str = Field(default="wss://stream.binance.com:9443/ws/btcusdt@kline_10m")
     binance_rest_url: str = Field(default="https://api.binance.com")
     binance_symbol: str = Field(default="BTCUSDT")
 
@@ -52,31 +49,7 @@ class Settings(BaseSettings):
 
     # Resolution
     bet_resolution_seconds: int = Field(default=300, ge=10)  # 5 minutes
-    # Doit correspondre a l'intervalle de bougie Binance utilise (defaut 5m).
-    candle_interval_seconds: int = Field(default=300, ge=60)
-
-    # Filtres de signal (pour eviter de parier sur du bruit)
-    # Corps minimum d'une bougie en % du prix (skip si trop petit = quasi-doji).
-    # 0.02 % ~ 16 USD sur 78kBTC, ~ 8 USD sur 40kBTC. A monter pour etre plus selectif.
-    min_candle_body_pct: float = Field(default=0.02, ge=0.0)
-    # Seuil de detection de la tendance Binance en %.
-    # 0.02 % ~ 16 USD sur 78kBTC. En dessous => trend FLAT (= signal incertain, on skip).
-    binance_trend_threshold_pct: float = Field(default=0.02, ge=0.0)
-    # Confirmation post-cloture : on attend N secondes apres la fermeture de la bougie
-    # et on verifie que le dernier prix continue dans la direction du signal. 0 = pas de confirmation.
-    post_close_confirmation_seconds: float = Field(default=3.0, ge=0.0)
-
-    # Strategie : "candle" (double confirmation bougie + trend Binance, defaut)
-    #             "arbitrage" (detecter le retard du carnet Polymarket vs Binance)
-    signal_mode: str = Field(default="candle")
-    # Seuil d'arbitrage en cents (0..1). Ex: 0.05 = on parie si fair_yes - market_yes > 5 cents.
-    arbitrage_threshold: float = Field(default=0.05, ge=0.0, le=1.0)
-    # Volatilite estimee de BTC sur 5 min en %. 0.20 = 0.2%. Determine la fair value.
-    vol_5min_pct: float = Field(default=0.20, gt=0.0)
-    # Frequence de poll du carnet Polymarket en mode arbitrage (secondes).
-    arbitrage_poll_interval: float = Field(default=2.0, gt=0.0)
-    # Slug de la serie Polymarket BTC 5min. Ne pas changer sauf si la serie change de nom.
-    polymarket_btc_series_slug: str = Field(default="btc-up-or-down-5m")
+    candle_interval_seconds: int = Field(default=600, ge=60)  # 10 minutes
 
     @property
     def is_demo(self) -> bool:

@@ -61,12 +61,11 @@ def test_double_confirmation_down():
 
 
 def test_no_signal_when_contradictory():
-    # Bougie verte mais Binance baisse => contradiction reelle
+    # Bougie verte mais Binance flat / down => pas de pari
     candle = Candle(open_price=100, high=110, low=99, close=105)
     sig = evaluate_signal(candle, [105, 104, 103])
     assert not sig.confirmed
     assert sig.direction == Direction.FLAT
-    assert sig.reason.startswith("signaux contradictoires")
 
 
 def test_no_signal_when_doji():
@@ -74,64 +73,3 @@ def test_no_signal_when_doji():
     sig = evaluate_signal(candle, [100, 101, 102])
     assert not sig.confirmed
     assert sig.direction == Direction.FLAT
-    assert sig.reason == "bougie doji (open == close)"
-
-
-def test_signal_skipped_when_binance_flat_strict():
-    # Bougie verte mais Binance FLAT -> skip avec un message neutre, pas de contradiction
-    candle = Candle(open_price=100, high=101, low=99, close=100.5)
-    sig = evaluate_signal(candle, [100.0, 100.001, 100.0])  # variation <0.005%
-    assert sig.binance_trend == Direction.FLAT
-    assert not sig.confirmed
-    assert sig.direction == Direction.FLAT
-    assert sig.reason.startswith("tendance Binance neutre")
-    assert "contradictoire" not in sig.reason
-
-
-def test_signal_skipped_red_candle_flat_binance():
-    candle = Candle(open_price=100, high=101, low=99, close=99.5)
-    sig = evaluate_signal(candle, [100.0, 100.0])
-    assert sig.binance_trend == Direction.FLAT
-    assert not sig.confirmed
-    assert sig.direction == Direction.FLAT
-    assert sig.reason.startswith("tendance Binance neutre")
-    assert "contradictoire" not in sig.reason
-
-
-def test_signal_doji_takes_priority_over_flat_binance():
-    # Doji + Binance FLAT : on indique "doji" plutot que "contradictoires"
-    candle = Candle(open_price=100, high=101, low=99, close=100)
-    sig = evaluate_signal(candle, [100.0, 100.0])
-    assert not sig.confirmed
-    assert sig.reason == "bougie doji (open == close)"
-
-
-def test_signal_skipped_when_candle_body_too_small():
-    # Bougie verte mais corps < min_body_pct => skip "bougie trop petite"
-    candle = Candle(open_price=100, high=101, low=99, close=100.005)  # 0.005% body
-    sig = evaluate_signal(candle, [100, 102, 104], min_body_pct=0.02)
-    assert not sig.confirmed
-    assert sig.direction == Direction.FLAT
-    assert sig.reason.startswith("bougie trop petite")
-
-
-def test_signal_confirmed_when_body_above_min():
-    # Bougie verte avec corps >= min_body_pct + Binance UP => confirme
-    candle = Candle(open_price=100, high=101, low=99, close=100.05)  # 0.05% body
-    sig = evaluate_signal(candle, [100, 102, 104], min_body_pct=0.02)
-    assert sig.confirmed
-    assert sig.direction == Direction.UP
-
-
-def test_signal_uses_custom_trend_threshold():
-    # Variation 0.01% en dessous du seuil 0.02% => Binance FLAT => skip
-    candle = Candle(open_price=100, high=101, low=99, close=100.5)  # body 0.5%
-    sig = evaluate_signal(
-        candle,
-        [100.0, 100.005, 100.01],
-        min_body_pct=0.02,
-        trend_threshold_pct=0.02,
-    )
-    assert sig.binance_trend == Direction.FLAT
-    assert not sig.confirmed
-    assert sig.reason.startswith("tendance Binance neutre")

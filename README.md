@@ -1,6 +1,6 @@
 # Oracle Bot V2.0
 
-Bot automatise de paris sur Bitcoin combinant les bougies Binance (5 min par defaut, configurable) et les marches publics Polymarket.
+Bot automatise de paris sur Bitcoin combinant les bougies Binance 10 min et les marches publics Polymarket.
 Ce dépôt implémente l'intégralité du cahier des charges V2.0 : **mode DEMO gratuit** (paris simulés sur vrais prix) et **mode PRODUCTION** (paris réels via Polymarket CLOB), bascule sans changer le code.
 
 > *Valide d'abord. Investis ensuite.*
@@ -23,7 +23,7 @@ oracle-bot/
 │   ├── main.py            # FastAPI + lifespan = bot
 │   ├── bot.py             # Orchestrateur asyncio (start/stop, SL/TP, paris)
 │   ├── strategy.py        # Signal bougie + double confirmation
-│   ├── binance_ws.py      # WebSocket Binance (btcusdt@kline_5m par defaut)
+│   ├── binance_ws.py      # WebSocket Binance (btcusdt@kline_10m)
 │   ├── polymarket.py      # Client REST public (gamma + clob)
 │   ├── trader.py          # DemoTrader / ProdTrader (meme interface)
 │   ├── telegram_bot.py    # Notifs + commandes /start /stop /mise /mode /solde /stats /status
@@ -37,7 +37,7 @@ oracle-bot/
 
 Flow :
 
-1. Binance WebSocket envoie chaque bougie BTC en temps réel (gratuit, public). Intervalle par défaut **5 min** (modifiable via `BINANCE_WS_URL`). NB : Binance ne supporte **pas** d'intervalle 10 min — utiliser 5 m ou 15 m.
+1. Binance WebSocket envoie chaque bougie BTC 10 min en temps réel (gratuit, public).
 2. Le bot calcule la couleur de la bougie (verte/rouge) et la tendance court-terme.
 3. **Double confirmation** : un pari n'est placé que si bougie + tendance Binance s'alignent. Sinon → skip.
 4. Polymarket public est lu pour récupérer le prix du marché BTC et calculer un PnL virtuel réaliste.
@@ -89,42 +89,6 @@ Voir [`.env.example`](.env.example). Principales :
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Notifs Telegram | (vide → desactive) |
 | `POLYMARKET_PRIVATE_KEY` / `POLYMARKET_FUNDER_ADDRESS` | Wallet pour mode prod uniquement | (vide) |
 | `DATABASE_URL` | URL SQLAlchemy (async) | `sqlite+aiosqlite:///./data/oracle.db` |
-| `BINANCE_WS_URL` | Stream Binance kline. Intervalles valides : 1m, 3m, 5m, 15m, 30m, 1h, ... | `wss://stream.binance.com:9443/ws/btcusdt@kline_5m` |
-| `CANDLE_INTERVAL_SECONDS` | Doit correspondre a l'intervalle ci-dessus (300 pour 5m, 60 pour 1m, 900 pour 15m) | `300` |
-| `MIN_CANDLE_BODY_PCT` | Corps minimum d'une bougie en %. Filtre les quasi-doji (bruit). 0.02 % ~ 16 USD sur 78kBTC. | `0.02` |
-| `BINANCE_TREND_THRESHOLD_PCT` | Seuil de detection de la tendance Binance en %. En dessous = FLAT = skip. | `0.02` |
-| `POST_CLOSE_CONFIRMATION_SECONDS` | Delai apres la fermeture pour verifier que le prix continue dans la direction du signal. 0 = pas de confirmation. | `3` |
-| `SIGNAL_MODE` | `candle` / `arbitrage` / `both` (deux strategies en parallele, comparaison cote a cote) | `candle` |
-| `ARBITRAGE_THRESHOLD` | En cents (0..1). Pari si fair_yes - market_yes >= seuil. | `0.05` |
-| `VOL_5MIN_PCT` | Volatilite estimee de BTC sur 5 min en %. | `0.20` |
-| `ARBITRAGE_POLL_INTERVAL` | Frequence de poll du carnet Polymarket en mode arbitrage (sec). | `2.0` |
-
-### Strategie B : arbitrage du retard Polymarket vs Binance (`SIGNAL_MODE=arbitrage`)
-
-Idee : le carnet d'ordres Polymarket BTC 5min reagit avec un retard de quelques secondes par rapport au prix Binance temps reel. Le bot exploite ce retard.
-
-Algorithme :
-
-1. Trouve le marche BTC 5min Polymarket courant (via la serie `btc-up-or-down-5m`).
-2. Capture le **strike** = prix BTC Binance au debut de la fenetre.
-3. Toutes les `ARBITRAGE_POLL_INTERVAL` secondes :
-   - Calcule la **fair value** YES selon `(BTC_now - strike) / strike` et la duree restante (modele normal, vol parametree).
-   - Lit le carnet d'ordres CLOB Polymarket (best bid / best ask sur le token YES).
-   - Si `fair_yes - best_ask >= seuil` -> achete YES (= pari UP, sous-evalue).
-   - Si `best_bid - fair_yes >= seuil` -> achete NO (= pari DOWN, sur-evalue).
-4. Un seul pari par fenetre 5min. Resolution au end de la fenetre (Polymarket).
-
-NB : actuellement les paris reels en mode prod ne sont pas branches sur `py-clob-client` — placeholder. En mode demo, on simule l'execution au prix observe et on calcule le PnL.
-
-### Trois filtres "humain" anti-bruit
-
-Le bot reproduit ce qu'un trader manuel ferait : il refuse de parier si le signal n'est pas franc.
-
-1. **Bougie significative** (`MIN_CANDLE_BODY_PCT`) : ignore une bougie dont le corps est trop petit (quasi-doji = pas de momentum clair).
-2. **Tendance Binance significative** (`BINANCE_TREND_THRESHOLD_PCT`) : ignore les variations de prix recentes inferieures au seuil (sideways = pas de momentum clair).
-3. **Confirmation post-cloture** (`POST_CLOSE_CONFIRMATION_SECONDS`) : apres la fermeture, attend N sec et verifie que le prix continue dans la direction du signal. Si retournement immediat → skip.
-
-Pour etre **plus selectif**, monter les seuils (ex: `MIN_CANDLE_BODY_PCT=0.05`, `BINANCE_TREND_THRESHOLD_PCT=0.05`) — moins de paris, mais plus de qualite.
 
 ## Bascule DEMO → PROD
 
