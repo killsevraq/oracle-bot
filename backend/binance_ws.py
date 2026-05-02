@@ -1,4 +1,4 @@
-"""Client WebSocket Binance pour les bougies BTC (5m par defaut, configurable)."""
+"""Client WebSocket Binance pour les bougies BTC 10min."""
 
 from __future__ import annotations
 
@@ -25,18 +25,14 @@ class TickerSnapshot:
 
 
 class BinanceClient:
-    """Stream les bougies BTC via WebSocket et garde un buffer de prix recents.
-
-    L'intervalle est defini par BINANCE_WS_URL (defaut kline_5m). Binance ne supporte
-    pas 10m -- utiliser 5m ou 15m.
-    """
+    """Stream les bougies BTC 10min via WebSocket et garde un buffer de prix recents."""
 
     def __init__(
         self,
         ws_url: str | None = None,
         rest_url: str | None = None,
         symbol: str | None = None,
-        recent_window: int = 240,
+        recent_window: int = 30,
     ) -> None:
         self.ws_url = ws_url or settings.binance_ws_url
         self.rest_url = rest_url or settings.binance_rest_url
@@ -77,18 +73,15 @@ class BinanceClient:
     async def _iter_messages(self) -> AsyncIterator[TickerSnapshot]:
         async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=20) as ws:
             logger.info("Connecte a Binance WS: %s", self.ws_url)
-            n = 0
             async for raw in ws:
                 if self._stop.is_set():
                     break
                 try:
                     msg = json.loads(raw)
                 except json.JSONDecodeError:
-                    logger.debug("WS message JSON invalide: %r", raw[:200])
                     continue
                 k = msg.get("k") or {}
                 if not k:
-                    logger.warning("WS message sans 'k': %r", msg)
                     continue
                 try:
                     candle = Candle(
@@ -98,18 +91,8 @@ class BinanceClient:
                         close=float(k["c"]),
                         is_closed=bool(k.get("x", False)),
                     )
-                except (KeyError, ValueError) as exc:
-                    logger.warning("WS candle parse error: %s — payload=%r", exc, k)
+                except (KeyError, ValueError):
                     continue
-                n += 1
-                if n <= 3 or n % 100 == 0 or candle.is_closed:
-                    logger.info(
-                        "WS tick #%d: close=%.2f open=%.2f closed=%s",
-                        n,
-                        candle.close,
-                        candle.open_price,
-                        candle.is_closed,
-                    )
                 yield TickerSnapshot(price=candle.close, candle=candle)
 
     def stop(self) -> None:

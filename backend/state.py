@@ -39,12 +39,6 @@ class BotState:
     # signal d'arret SL/TP atteint
     halted_reason: str = ""
 
-    # Debug / observabilite
-    last_tick_at: datetime | None = None
-    tick_count: int = 0
-    last_candle_close_at: datetime | None = None
-    candle_close_count: int = 0
-
     @property
     def win_rate(self) -> float:
         decided = self.bets_won + self.bets_lost
@@ -107,10 +101,6 @@ def serialize_state(s: BotState) -> dict[str, object]:
         "halted_reason": s.halted_reason,
         "win_rate": s.win_rate,
         "pnl": s.pnl,
-        "last_tick_at": s.last_tick_at.isoformat() if s.last_tick_at else None,
-        "tick_count": s.tick_count,
-        "last_candle_close_at": s.last_candle_close_at.isoformat() if s.last_candle_close_at else None,
-        "candle_close_count": s.candle_close_count,
         "server_time": datetime.now(tz=timezone.utc).isoformat(),
     }
 
