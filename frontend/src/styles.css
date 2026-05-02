@@ -52,6 +52,8 @@ body {
 }
 .badge.demo { background: var(--demo); color: #1a1300; }
 .badge.prod { background: var(--prod); color: #fff; }
+.badge.strategy-candle { background: rgba(76, 201, 240, 0.2); color: #4cc9f0; border: 1px solid #4cc9f0; }
+.badge.strategy-arb { background: rgba(249, 199, 79, 0.2); color: #f9c74f; border: 1px solid #f9c74f; }
 
 .grid {
   display: grid;

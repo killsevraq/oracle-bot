@@ -94,6 +94,27 @@ Voir [`.env.example`](.env.example). Principales :
 | `MIN_CANDLE_BODY_PCT` | Corps minimum d'une bougie en %. Filtre les quasi-doji (bruit). 0.02 % ~ 16 USD sur 78kBTC. | `0.02` |
 | `BINANCE_TREND_THRESHOLD_PCT` | Seuil de detection de la tendance Binance en %. En dessous = FLAT = skip. | `0.02` |
 | `POST_CLOSE_CONFIRMATION_SECONDS` | Delai apres la fermeture pour verifier que le prix continue dans la direction du signal. 0 = pas de confirmation. | `3` |
+| `SIGNAL_MODE` | `candle` / `arbitrage` / `both` (deux strategies en parallele, comparaison cote a cote) | `candle` |
+| `ARBITRAGE_THRESHOLD` | En cents (0..1). Pari si fair_yes - market_yes >= seuil. | `0.05` |
+| `VOL_5MIN_PCT` | Volatilite estimee de BTC sur 5 min en %. | `0.20` |
+| `ARBITRAGE_POLL_INTERVAL` | Frequence de poll du carnet Polymarket en mode arbitrage (sec). | `2.0` |
+
+### Strategie B : arbitrage du retard Polymarket vs Binance (`SIGNAL_MODE=arbitrage`)
+
+Idee : le carnet d'ordres Polymarket BTC 5min reagit avec un retard de quelques secondes par rapport au prix Binance temps reel. Le bot exploite ce retard.
+
+Algorithme :
+
+1. Trouve le marche BTC 5min Polymarket courant (via la serie `btc-up-or-down-5m`).
+2. Capture le **strike** = prix BTC Binance au debut de la fenetre.
+3. Toutes les `ARBITRAGE_POLL_INTERVAL` secondes :
+   - Calcule la **fair value** YES selon `(BTC_now - strike) / strike` et la duree restante (modele normal, vol parametree).
+   - Lit le carnet d'ordres CLOB Polymarket (best bid / best ask sur le token YES).
+   - Si `fair_yes - best_ask >= seuil` -> achete YES (= pari UP, sous-evalue).
+   - Si `best_bid - fair_yes >= seuil` -> achete NO (= pari DOWN, sur-evalue).
+4. Un seul pari par fenetre 5min. Resolution au end de la fenetre (Polymarket).
+
+NB : actuellement les paris reels en mode prod ne sont pas branches sur `py-clob-client` — placeholder. En mode demo, on simule l'execution au prix observe et on calcule le PnL.
 
 ### Trois filtres "humain" anti-bruit
 

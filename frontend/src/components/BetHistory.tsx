@@ -27,6 +27,7 @@ export function BetHistory({ refreshKey }: { refreshKey: number }) {
             <th>#</th>
             <th>Heure</th>
             <th>Mode</th>
+            <th>Strat</th>
             <th>Marche</th>
             <th>Dir</th>
             <th>Mise</th>
@@ -37,23 +38,28 @@ export function BetHistory({ refreshKey }: { refreshKey: number }) {
           </tr>
         </thead>
         <tbody>
-          {bets.map((b) => (
-            <tr key={b.id}>
-              <td>{b.id}</td>
-              <td>{new Date(b.created_at).toLocaleTimeString()}</td>
-              <td>{b.mode.toUpperCase()}</td>
-              <td>{b.market}</td>
-              <td className={b.direction === "UP" ? "up" : b.direction === "DOWN" ? "down" : "muted"}>{b.direction}</td>
-              <td>{b.amount.toFixed(2)}</td>
-              <td>{b.entry_price.toFixed(2)}</td>
-              <td>{b.exit_price ? b.exit_price.toFixed(2) : "—"}</td>
-              <td>{b.status}</td>
-              <td className={b.pnl > 0 ? "up" : b.pnl < 0 ? "down" : "muted"}>{b.pnl > 0 ? "+" : ""}{b.pnl.toFixed(2)}</td>
-            </tr>
-          ))}
+          {bets.map((b) => {
+            const strategy = b.strategy || "candle";
+            const strategyClass = strategy === "arbitrage" ? "strategy-arb" : "strategy-candle";
+            return (
+              <tr key={b.id}>
+                <td>{b.id}</td>
+                <td>{new Date(b.created_at).toLocaleTimeString()}</td>
+                <td>{b.mode.toUpperCase()}</td>
+                <td><span className={"badge " + strategyClass}>{strategy}</span></td>
+                <td>{b.market}</td>
+                <td className={b.direction === "UP" ? "up" : b.direction === "DOWN" ? "down" : "muted"}>{b.direction}</td>
+                <td>{b.amount.toFixed(2)}</td>
+                <td>{b.entry_price.toFixed(2)}</td>
+                <td>{b.exit_price ? b.exit_price.toFixed(2) : "—"}</td>
+                <td>{b.status}</td>
+                <td className={b.pnl > 0 ? "up" : b.pnl < 0 ? "down" : "muted"}>{b.pnl > 0 ? "+" : ""}{b.pnl.toFixed(2)}</td>
+              </tr>
+            );
+          })}
           {bets.length === 0 && (
             <tr>
-              <td colSpan={10} className="muted" style={{ textAlign: "center", padding: 24 }}>
+              <td colSpan={11} className="muted" style={{ textAlign: "center", padding: 24 }}>
                 Aucun pari pour l'instant. Demarre le bot pour commencer.
               </td>
             </tr>

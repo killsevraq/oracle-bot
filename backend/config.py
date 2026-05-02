@@ -66,6 +66,18 @@ class Settings(BaseSettings):
     # et on verifie que le dernier prix continue dans la direction du signal. 0 = pas de confirmation.
     post_close_confirmation_seconds: float = Field(default=3.0, ge=0.0)
 
+    # Strategie : "candle" (double confirmation bougie + trend Binance, defaut)
+    #             "arbitrage" (detecter le retard du carnet Polymarket vs Binance)
+    signal_mode: str = Field(default="candle")
+    # Seuil d'arbitrage en cents (0..1). Ex: 0.05 = on parie si fair_yes - market_yes > 5 cents.
+    arbitrage_threshold: float = Field(default=0.05, ge=0.0, le=1.0)
+    # Volatilite estimee de BTC sur 5 min en %. 0.20 = 0.2%. Determine la fair value.
+    vol_5min_pct: float = Field(default=0.20, gt=0.0)
+    # Frequence de poll du carnet Polymarket en mode arbitrage (secondes).
+    arbitrage_poll_interval: float = Field(default=2.0, gt=0.0)
+    # Slug de la serie Polymarket BTC 5min. Ne pas changer sauf si la serie change de nom.
+    polymarket_btc_series_slug: str = Field(default="btc-up-or-down-5m")
+
     @property
     def is_demo(self) -> bool:
         return self.mode == BotMode.DEMO

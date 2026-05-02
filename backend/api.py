@@ -67,6 +67,7 @@ class BetOut(BaseModel):
     signal_candle: str
     signal_binance_trend: str
     notes: str
+    strategy: str
 
 
 # ---------- Endpoints ----------
@@ -149,26 +150,68 @@ async def list_bets(
             signal_candle=r.signal_candle,
             signal_binance_trend=r.signal_binance_trend,
             notes=r.notes,
+            strategy=r.strategy or "candle",
         )
         for r in rows
     ]
 
 
+def _strategy_breakdown(rows: list[models.Bet]) -> dict[str, dict[str, Any]]:
+    """Aggrege W/L/skip/PnL par strategie."""
+    breakdown: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        key = r.strategy or "candle"
+        b = breakdown.setdefault(
+            key,
+            {
+                "strategy": key,
+                "bets_total": 0,
+                "bets_won": 0,
+                "bets_lost": 0,
+                "bets_skipped": 0,
+                "total_staked": 0.0,
+                "pnl": 0.0,
+            },
+        )
+        if r.status == models.BetStatus.SKIPPED.value:
+            b["bets_skipped"] += 1
+            continue
+        if r.amount > 0:
+            b["bets_total"] += 1
+            b["total_staked"] += r.amount
+        if r.status == models.BetStatus.WON.value:
+            b["bets_won"] += 1
+            b["pnl"] += r.pnl
+        elif r.status == models.BetStatus.LOST.value:
+            b["bets_lost"] += 1
+            b["pnl"] += r.pnl
+    for b in breakdown.values():
+        resolved = b["bets_won"] + b["bets_lost"]
+        b["win_rate"] = (b["bets_won"] / resolved * 100.0) if resolved else 0.0
+        b["pnl"] = round(b["pnl"], 4)
+        b["total_staked"] = round(b["total_staked"], 4)
+        b["win_rate"] = round(b["win_rate"], 2)
+    return breakdown
+
+
 @router.get("/stats")
 async def stats(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     rows = (await session.execute(select(models.Bet).order_by(models.Bet.created_at))).scalars().all()
+    cumulative_by_strategy: dict[str, list[dict[str, float | str]]] = {}
+    pnl_acc: dict[str, float] = {}
     cumulative = []
     pnl = 0.0
     for r in rows:
-        if r.status in (models.BetStatus.WON.value, models.BetStatus.LOST.value):
-            pnl += r.pnl
-            cumulative.append(
-                {
-                    "ts": r.resolved_at.isoformat() if r.resolved_at else r.created_at.isoformat(),
-                    "pnl": round(pnl, 4),
-                }
-            )
+        if r.status not in (models.BetStatus.WON.value, models.BetStatus.LOST.value):
+            continue
+        ts = r.resolved_at.isoformat() if r.resolved_at else r.created_at.isoformat()
+        pnl += r.pnl
+        cumulative.append({"ts": ts, "pnl": round(pnl, 4)})
+        key = r.strategy or "candle"
+        pnl_acc[key] = pnl_acc.get(key, 0.0) + r.pnl
+        cumulative_by_strategy.setdefault(key, []).append({"ts": ts, "pnl": round(pnl_acc[key], 4)})
     s = get_state()
+    breakdown = _strategy_breakdown(list(rows))
     return {
         "win_rate": s.win_rate,
         "pnl": s.pnl,
@@ -179,6 +222,8 @@ async def stats(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
         "bets_lost": s.bets_lost,
         "bets_skipped": s.bets_skipped,
         "cumulative_pnl": cumulative,
+        "by_strategy": breakdown,
+        "cumulative_pnl_by_strategy": cumulative_by_strategy,
     }
 
 

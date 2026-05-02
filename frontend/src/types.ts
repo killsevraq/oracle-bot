@@ -42,6 +42,18 @@ export interface Bet {
   signal_candle: string;
   signal_binance_trend: string;
   notes: string;
+  strategy: string;
+}
+
+export interface StrategyBreakdown {
+  strategy: string;
+  bets_total: number;
+  bets_won: number;
+  bets_lost: number;
+  bets_skipped: number;
+  total_staked: number;
+  pnl: number;
+  win_rate: number;
 }
 
 export interface Stats {
@@ -54,4 +66,6 @@ export interface Stats {
   bets_lost: number;
   bets_skipped: number;
   cumulative_pnl: { ts: string; pnl: number }[];
+  by_strategy: Record<string, StrategyBreakdown>;
+  cumulative_pnl_by_strategy: Record<string, { ts: string; pnl: number }[]>;
 }
