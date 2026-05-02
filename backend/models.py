@@ -49,7 +49,3 @@ class Bet(Base):
     signal_candle: Mapped[str] = mapped_column(String(8), default="")
     signal_binance_trend: Mapped[str] = mapped_column(String(8), default="")
     notes: Mapped[str] = mapped_column(String(255), default="")
-    # Strategie qui a place le pari : "candle" (double confirmation bougie + trend Binance)
-    # ou "arbitrage" (lag carnet Polymarket vs Binance). Permet de comparer les win rates
-    # quand SIGNAL_MODE=both.
-    strategy: Mapped[str] = mapped_column(String(16), default="candle", index=True)

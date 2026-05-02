@@ -13,11 +13,6 @@ from backend.binance_ws import BinanceClient, TickerSnapshot
 from backend.config import BotMode, settings
 from backend.db import SessionLocal, init_db
 from backend.polymarket import PolymarketReader
-from backend.polymarket_clob import (
-    Btc5MinMarket,
-    PolymarketClobClient,
-    fair_yes_probability,
-)
 from backend.state import get_state, publish, serialize_state, update_state
 from backend.strategy import (
     Candle,
@@ -45,7 +40,6 @@ class OracleBot:
 
         self.binance = BinanceClient()
         self.polymarket = PolymarketReader()
-        self.clob = PolymarketClobClient()
         self.trader: Trader = build_trader(
             mode=self.state.mode,
             private_key=settings.polymarket_private_key,
@@ -62,10 +56,6 @@ class OracleBot:
         self._lock = asyncio.Lock()
         self._pending_bets: list[tuple[PlacedBet, int, datetime]] = []
         self._last_candle_ts: float = 0.0
-        # Etat strategie arbitrage
-        self._arb_market: Btc5MinMarket | None = None
-        self._arb_strike: float = 0.0  # BTC capture au debut de la fenetre courante
-        self._arb_bet_placed_for_slug: str = ""  # un seul pari par fenetre Polymarket
 
     # ---------- API publique ----------
 
@@ -93,21 +83,6 @@ class OracleBot:
                 asyncio.create_task(self._poll_polymarket(), name="poly-poll"),
                 asyncio.create_task(self._resolve_loop(), name="resolve-loop"),
             ]
-            if settings.signal_mode in ("arbitrage", "both"):
-                self._tasks.append(asyncio.create_task(self._arbitrage_loop(), name="arbitrage-loop"))
-                logger.info(
-                    "Strategie arbitrage active (poll %.1fs, seuil %.2f, vol %.2f%% / 5min)",
-                    settings.arbitrage_poll_interval,
-                    settings.arbitrage_threshold,
-                    settings.vol_5min_pct,
-                )
-            if settings.signal_mode in ("candle", "both"):
-                logger.info(
-                    "Strategie candle active (corps min %.3f%%, trend %.3f%%, post-close %.1fs)",
-                    settings.min_candle_body_pct,
-                    settings.binance_trend_threshold_pct,
-                    settings.post_close_confirmation_seconds,
-                )
         await self.notifier.send("Oracle Bot demarre.")
 
     async def stop(self, reason: str = "") -> None:
@@ -162,44 +137,22 @@ class OracleBot:
 
     async def _on_tick(self, snapshot: TickerSnapshot) -> None:
         prices = list(self.binance.recent_prices)
-        trend = binance_short_term_trend(prices, threshold_pct=settings.binance_trend_threshold_pct)
+        trend = binance_short_term_trend(prices)
         await update_state(
             btc_price=snapshot.price,
             btc_trend=trend.value,
             last_candle_color=snapshot.candle.color.value,
-            last_tick_at=datetime.now(tz=timezone.utc),
-            tick_count=self.state.tick_count + 1,
         )
 
     async def _on_candle_close(self, candle: Candle) -> None:
         # Eviter les doubles traitements rapides
         now = datetime.now(tz=timezone.utc)
         if (now.timestamp() - self._last_candle_ts) < settings.candle_interval_seconds / 2:
-            logger.info("Candle close ignoree (trop proche de la precedente)")
             return
         self._last_candle_ts = now.timestamp()
 
         recent_prices = list(self.binance.recent_prices)
-        signal = evaluate_signal(
-            candle,
-            recent_prices,
-            min_body_pct=settings.min_candle_body_pct,
-            trend_threshold_pct=settings.binance_trend_threshold_pct,
-        )
-        logger.info(
-            "Candle CLOSE #%d: color=%s open=%.2f close=%.2f signal=%s confirmed=%s reason=%s",
-            self.state.candle_close_count + 1,
-            candle.color.value,
-            candle.open_price,
-            candle.close,
-            signal.direction.value,
-            signal.confirmed,
-            signal.reason,
-        )
-        await update_state(
-            last_candle_close_at=now,
-            candle_close_count=self.state.candle_close_count + 1,
-        )
+        signal = evaluate_signal(candle, recent_prices)
 
         await update_state(
             current_signal=signal.direction.value if signal.confirmed else "INCERTAIN",
@@ -217,35 +170,15 @@ class OracleBot:
         if not self.state.running:
             return
 
-        # Mode arbitrage pur : la decision de pari est prise dans _arbitrage_loop, pas ici.
-        # Mode both : on continue, les deux strategies posent leurs paris en parallele.
-        if settings.signal_mode == "arbitrage":
-            logger.info("Signal candle ignore (mode=arbitrage)")
-            return
-
-        # Filtre 3 : confirmation post-cloture. On attend N sec et on verifie que le prix
-        # continue dans la direction du signal. Si retournement immediat, on skip.
-        if settings.post_close_confirmation_seconds > 0:
-            await asyncio.sleep(settings.post_close_confirmation_seconds)
-            current_price = self.state.btc_price or candle.close
-            continued = (signal.direction == Direction.UP and current_price >= candle.close) or (
-                signal.direction == Direction.DOWN and current_price <= candle.close
-            )
-            if not continued:
-                reason = (
-                    f"retournement post-cloture ({signal.direction.value}, "
-                    f"close={candle.close:.2f} -> spot={current_price:.2f})"
-                )
-                logger.info("Skip post-cloture: %s", reason)
-                await self._record_skip(reason, candle)
-                await self.notifier.send(f"Signal annule par retournement post-cloture ({reason}).")
-                await update_state(current_signal="INCERTAIN", next_bet_eta=None)
-                return
-
-        # Lecture Polymarket : on utilise le carnet CLOB du marche actif pour obtenir
-        # le vrai prix d'entree (best ask du cote sur lequel on parie). Le payout
-        # demo en depend : payout = mise * (1/poly_price - 1), comme sur Polymarket.
-        poly_price = await self._fetch_entry_price(signal.direction)
+        # Lecture Polymarket pour PnL virtuel et logging
+        market = await self.polymarket.fetch_btc_market()
+        poly_price = (
+            market.yes_price
+            if market and signal.direction == Direction.UP
+            else market.no_price
+            if market
+            else 0.5
+        )
 
         placed = await self.trader.place_bet(
             direction=signal.direction,
@@ -256,10 +189,7 @@ class OracleBot:
         )
 
         bet_id = await self._persist_bet(
-            placed,
-            signal_candle=candle.color,
-            signal_trend=signal.binance_trend,
-            strategy="candle",
+            placed, signal_candle=candle.color, signal_trend=signal.binance_trend
         )
         self._pending_bets.append((placed, bet_id, now + timedelta(seconds=settings.bet_resolution_seconds)))
 
@@ -301,41 +231,12 @@ class OracleBot:
                     )
                     icon = "GAGNE" if won else "PERDU"
                     await self.notifier.send(
-                        f"[{placed.mode.upper()}] {icon} {pnl:+.2f} USDC "
-                        f"(entree poly={placed.polymarket_price:.3f}, mise={placed.amount:.2f}) "
-                        f"| Solde: {new_balance:.2f}"
+                        f"[{placed.mode.upper()}] {icon} {pnl:+.2f} USDC | Solde: {new_balance:.2f}"
                     )
                     await self._check_sl_tp()
                 self._pending_bets = still_pending
         except asyncio.CancelledError:
             return
-
-    async def _fetch_entry_price(self, direction: Direction) -> float:
-        """Recupere le prix d'entree Polymarket (best ask du cote pari) via le CLOB.
-
-        - direction UP  -> best_ask du token YES (cout pour acheter une part YES).
-        - direction DOWN -> 1 - best_bid YES (~ best_ask du token NO).
-
-        Retourne 0.5 si aucun carnet dispo. Clamp dans [0.02, 0.98] pour eviter
-        des payouts irrealistes en cas de prix degenere.
-        """
-        try:
-            market = await self.clob.find_current_market()
-            if market is None:
-                return 0.5
-            book = await self.clob.fetch_book(market.yes_token_id)
-            if book is None:
-                return 0.5
-            if direction == Direction.UP:
-                price = book.best_ask if 0.0 < book.best_ask < 1.0 else book.mid
-            elif direction == Direction.DOWN:
-                price = 1.0 - book.best_bid if 0.0 < book.best_bid < 1.0 else 1.0 - book.mid
-            else:
-                price = 0.5
-        except Exception as exc:
-            logger.warning("Lecture prix Polymarket echouee: %s", exc)
-            return 0.5
-        return max(0.02, min(0.98, price))
 
     async def _poll_polymarket(self) -> None:
         try:
@@ -357,172 +258,6 @@ class OracleBot:
         except Exception as exc:
             logger.warning("Polymarket poll error: %s", exc)
 
-    async def _arbitrage_loop(self) -> None:
-        """Detecte le retard du carnet Polymarket vs Binance et place des paris.
-
-        - On suit le marche BTC 5min Polymarket courant (via la serie).
-        - On capture le strike (BTC au debut de la fenetre = open Binance).
-        - On poll le carnet d'ordres YES toutes les `arbitrage_poll_interval` secondes.
-        - On compare fair_yes (calculee depuis Binance) avec market_yes (carnet CLOB).
-        - Si l'ecart depasse `arbitrage_threshold`, on parie (un seul pari par fenetre).
-        """
-        try:
-            while True:
-                await asyncio.sleep(settings.arbitrage_poll_interval)
-                if not self.state.running:
-                    continue
-                try:
-                    await self._handle_arbitrage_tick()
-                except Exception as exc:
-                    logger.warning("Arbitrage tick error: %s", exc)
-        except asyncio.CancelledError:
-            return
-
-    async def _refresh_arbitrage_market(self) -> bool:
-        """Met a jour le marche Polymarket courant. Retourne True si on en a un."""
-        market = await self.clob.find_current_market()
-        if market is None:
-            self._arb_market = None
-            return False
-        if not self._arb_market or self._arb_market.slug != market.slug:
-            # Nouvelle fenetre : on capture le strike depuis le BTC actuel et on reset.
-            self._arb_market = market
-            self._arb_strike = self.state.btc_price or 0.0
-            self._arb_bet_placed_for_slug = ""
-            logger.info(
-                "Arbitrage: nouvelle fenetre %s end=%s strike=%.2f",
-                market.slug,
-                datetime.fromtimestamp(market.end_ts, tz=timezone.utc).isoformat(),
-                self._arb_strike,
-            )
-        return True
-
-    async def _handle_arbitrage_tick(self) -> None:
-        if not await self._refresh_arbitrage_market():
-            return
-        market = self._arb_market
-        if market is None:
-            return
-        if self._arb_bet_placed_for_slug == market.slug:
-            return
-        if self._arb_strike <= 0:
-            self._arb_strike = self.state.btc_price or 0.0
-            return
-        btc_now = self.state.btc_price or 0.0
-        if btc_now <= 0:
-            return
-        now_ts = datetime.now(tz=timezone.utc).timestamp()
-        time_remaining = max(0.0, market.end_ts - now_ts)
-        if time_remaining < 30.0:
-            # Trop tard pour parier (on n'aurait pas le temps de profiter du retard).
-            return
-
-        fair_yes = fair_yes_probability(
-            btc_now=btc_now,
-            btc_strike=self._arb_strike,
-            time_remaining_s=time_remaining,
-            vol_5min_pct=settings.vol_5min_pct,
-        )
-
-        # Carnet YES Polymarket
-        yes_book = await self.clob.fetch_book(market.yes_token_id)
-        if yes_book is None:
-            return
-
-        # Decision : si fair_yes > best_ask + seuil => buy YES (UP, sous-evalue).
-        #            si fair_yes < best_bid - seuil => buy NO (DOWN, sur-evalue).
-        edge_up = fair_yes - yes_book.best_ask
-        edge_down = yes_book.best_bid - fair_yes
-        logger.info(
-            "Arbitrage tick: btc=%.2f strike=%.2f fair_yes=%.3f mkt_bid=%.3f mkt_ask=%.3f "
-            "edge_up=%+.3f edge_down=%+.3f trem=%.0fs",
-            btc_now,
-            self._arb_strike,
-            fair_yes,
-            yes_book.best_bid,
-            yes_book.best_ask,
-            edge_up,
-            edge_down,
-            time_remaining,
-        )
-
-        threshold = settings.arbitrage_threshold
-        if edge_up >= threshold and 0.0 < yes_book.best_ask < 1.0:
-            await self._place_arbitrage_bet(
-                direction=Direction.UP,
-                fair_yes=fair_yes,
-                market_price=yes_book.best_ask,
-                edge=edge_up,
-                market=market,
-                btc_now=btc_now,
-            )
-        elif edge_down >= threshold and 0.0 < yes_book.best_bid < 1.0:
-            # On veut acheter NO -> on entre a 1 - best_bid (best ask sur NO ~ 1 - best_bid YES).
-            no_price = 1.0 - yes_book.best_bid
-            await self._place_arbitrage_bet(
-                direction=Direction.DOWN,
-                fair_yes=fair_yes,
-                market_price=no_price,
-                edge=edge_down,
-                market=market,
-                btc_now=btc_now,
-            )
-
-    async def _place_arbitrage_bet(
-        self,
-        *,
-        direction: Direction,
-        fair_yes: float,
-        market_price: float,
-        edge: float,
-        market: Btc5MinMarket,
-        btc_now: float,
-    ) -> None:
-        # Pour le pari arbitrage : entry_price = STRIKE (= BTC au debut de la fenetre).
-        # On gagne si BTC final > strike (UP) ou BTC final < strike (DOWN).
-        placed = await self.trader.place_bet(
-            direction=direction,
-            amount=self.state.bet_amount,
-            entry_price=self._arb_strike,
-            polymarket_price=market_price,
-            market=f"BTC-5min-arbitrage:{market.slug}",
-        )
-        bet_id = await self._persist_bet(
-            placed,
-            signal_candle=CandleColor.NONE,
-            signal_trend=Direction.FLAT,
-            strategy="arbitrage",
-        )
-        deadline = datetime.fromtimestamp(market.end_ts, tz=timezone.utc)
-        self._pending_bets.append((placed, bet_id, deadline))
-        self._arb_bet_placed_for_slug = market.slug
-        await update_state(
-            bets_total=self.state.bets_total + 1,
-            total_staked=self.state.total_staked + placed.amount,
-            current_signal=direction.value,
-            next_bet_eta=deadline,
-            last_event=(
-                f"Arbitrage {direction.value} {placed.amount:.2f} @ "
-                f"poly={market_price:.3f} fair={fair_yes:.3f} "
-                f"strike={self._arb_strike:.2f} btc={btc_now:.2f}"
-            ),
-        )
-        await self.notifier.send(
-            f"[ARBITRAGE {placed.mode.upper()}] {direction.value} "
-            f"{placed.amount:.2f} USDC @ poly={market_price:.3f} "
-            f"fair={fair_yes:.3f} (edge {edge:+.3f}) "
-            f"strike={self._arb_strike:.2f}"
-        )
-        logger.info(
-            "Arbitrage BET placed: dir=%s poly=%.3f fair=%.3f edge=%+.3f strike=%.2f end=%s",
-            direction.value,
-            market_price,
-            fair_yes,
-            edge,
-            self._arb_strike,
-            deadline.isoformat(),
-        )
-
     async def _check_sl_tp(self) -> None:
         s = self.state
         if s.stop_loss and s.pnl <= -abs(s.stop_loss):
@@ -536,11 +271,7 @@ class OracleBot:
     # ---------- Persistance ----------
 
     async def _persist_bet(
-        self,
-        placed: PlacedBet,
-        signal_candle: CandleColor,
-        signal_trend: Direction,
-        strategy: str = "candle",
+        self, placed: PlacedBet, signal_candle: CandleColor, signal_trend: Direction
     ) -> int:
         async with SessionLocal() as session:
             bet = models.Bet(
@@ -553,20 +284,11 @@ class OracleBot:
                 status=models.BetStatus.PENDING.value,
                 signal_candle=signal_candle.value,
                 signal_binance_trend=signal_trend.value,
-                strategy=strategy,
             )
             session.add(bet)
             await session.commit()
             await session.refresh(bet)
-            await publish(
-                "bet",
-                {
-                    "id": bet.id,
-                    "status": bet.status,
-                    "direction": bet.direction,
-                    "strategy": bet.strategy,
-                },
-            )
+            await publish("bet", {"id": bet.id, "status": bet.status, "direction": bet.direction})
             return bet.id
 
     async def _mark_resolved(
@@ -600,7 +322,6 @@ class OracleBot:
                 status=models.BetStatus.SKIPPED.value,
                 signal_candle=candle.color.value,
                 signal_binance_trend="",
-                strategy="candle",
                 notes=reason[:255],
             )
             session.add(bet)

@@ -27,8 +27,7 @@ export const api = {
     jsonFetch<BotState>("/bot/mode", { method: "POST", body: JSON.stringify({ mode }) }),
   setMarket: (market: string) =>
     jsonFetch<BotState>("/bot/target-market", { method: "POST", body: JSON.stringify({ market }) }),
-  bets: (limit = 100, strategy?: string) =>
-    jsonFetch<Bet[]>(`/bets?limit=${limit}${strategy ? `&strategy=${strategy}` : ""}`),
+  bets: (limit = 100) => jsonFetch<Bet[]>(`/bets?limit=${limit}`),
   stats: () => jsonFetch<Stats>("/stats"),
 };
 
