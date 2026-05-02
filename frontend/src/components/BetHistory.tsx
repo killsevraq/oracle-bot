@@ -37,8 +37,9 @@ export function BetHistory({ refreshKey, strategy, title }: Props) {
             <th>Marche</th>
             <th>Dir</th>
             <th>Mise</th>
-            <th>Entry</th>
-            <th>Exit</th>
+            <th>Entry BTC</th>
+            <th>Poly</th>
+            <th>Exit BTC</th>
             <th>Statut</th>
             <th>PnL</th>
           </tr>
@@ -57,6 +58,7 @@ export function BetHistory({ refreshKey, strategy, title }: Props) {
                 <td className={b.direction === "UP" ? "up" : b.direction === "DOWN" ? "down" : "muted"}>{b.direction}</td>
                 <td>{b.amount.toFixed(2)}</td>
                 <td>{b.entry_price.toFixed(2)}</td>
+                <td>{b.polymarket_price > 0 ? b.polymarket_price.toFixed(3) : "—"}</td>
                 <td>{b.exit_price ? b.exit_price.toFixed(2) : "—"}</td>
                 <td>{b.status}</td>
                 <td className={b.pnl > 0 ? "up" : b.pnl < 0 ? "down" : "muted"}>{b.pnl > 0 ? "+" : ""}{b.pnl.toFixed(2)}</td>
@@ -65,7 +67,7 @@ export function BetHistory({ refreshKey, strategy, title }: Props) {
           })}
           {bets.length === 0 && (
             <tr>
-              <td colSpan={11} className="muted" style={{ textAlign: "center", padding: 24 }}>
+              <td colSpan={12} className="muted" style={{ textAlign: "center", padding: 24 }}>
                 Aucun pari pour l'instant. Demarre le bot pour commencer.
               </td>
             </tr>

@@ -14,9 +14,13 @@ import { BetHistory } from "./BetHistory";
 
 const STRATEGY_DESCRIPTIONS: Record<string, string> = {
   candle:
-    "Double confirmation : la couleur de la bougie qui vient de fermer doit s'aligner avec le trend Binance court-terme. UP+UP -> pari UP ; DOWN+DOWN -> pari DOWN ; sinon skip.",
+    "Bougie verte (close > open) -> pari UP. Bougie rouge (close < open) -> pari DOWN. " +
+    "Filtres : corps min, confirmation Binance court-terme, et confirmation post-cloture pour " +
+    "eviter doji et retournements immediats. Le PnL utilise le vrai best_ask Polymarket.",
   arbitrage:
-    "Detecte le retard du carnet Polymarket vs Binance. Calcule fair_yes a partir du prix BTC actuel. Si l'ecart fair_yes vs market_yes depasse le seuil, on parie le mispricing.",
+    "Compare le prix YES Polymarket avec un fair_yes calcule depuis Binance et le temps " +
+    "restant dans la fenetre 5min. Si fair_yes - best_ask >= seuil, achat YES (UP). Si " +
+    "best_bid - fair_yes >= seuil, achat NO (DOWN). Le PnL utilise le prix CLOB du moment.",
 };
 
 const STRATEGY_LABELS: Record<string, string> = {
