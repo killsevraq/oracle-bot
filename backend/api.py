@@ -129,9 +129,12 @@ async def set_mode(payload: ModeIn, bot: OracleBot = Depends(_bot)) -> dict[str,
 async def list_bets(
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    strategy: str | None = Query(default=None, description="Filtre par strategie (candle/arbitrage)."),
     session: AsyncSession = Depends(get_session),
 ) -> list[BetOut]:
     stmt = select(models.Bet).order_by(desc(models.Bet.created_at)).offset(offset).limit(limit)
+    if strategy:
+        stmt = stmt.where(models.Bet.strategy == strategy)
     rows = (await session.execute(stmt)).scalars().all()
     return [
         BetOut(

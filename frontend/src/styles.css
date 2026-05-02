@@ -55,6 +55,36 @@ body {
 .badge.strategy-candle { background: rgba(76, 201, 240, 0.2); color: #4cc9f0; border: 1px solid #4cc9f0; }
 .badge.strategy-arb { background: rgba(249, 199, 79, 0.2); color: #f9c74f; border: 1px solid #f9c74f; }
 
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color 120ms, border-color 120ms;
+}
+
+.tab:hover {
+  color: #c9d2e5;
+}
+
+.tab.active {
+  color: #fff;
+  border-bottom-color: var(--accent, #4cc9f0);
+}
+
 .grid {
   display: grid;
   gap: 16px;

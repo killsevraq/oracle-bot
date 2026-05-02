@@ -2,25 +2,31 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Bet } from "../types";
 
-export function BetHistory({ refreshKey }: { refreshKey: number }) {
+interface Props {
+  refreshKey: number;
+  strategy?: string;
+  title?: string;
+}
+
+export function BetHistory({ refreshKey, strategy, title }: Props) {
   const [bets, setBets] = useState<Bet[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const data = await api.bets(50);
+        const data = await api.bets(50, strategy);
         if (!cancelled) setBets(data);
       } catch {
         // ignore
       }
     };
     load();
-  }, [refreshKey]);
+  }, [refreshKey, strategy]);
 
   return (
     <div className="card">
-      <h2>Historique des paris</h2>
+      <h2>{title ?? "Historique des paris"}</h2>
       <table>
         <thead>
           <tr>
